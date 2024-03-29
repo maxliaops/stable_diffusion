@@ -1,0 +1,7 @@
+flash_attn==2.5.6
+labml==0.5.1
+matplotlib==3.8.2
+numpy==1.26.4
+Pillow==10.2.0
+torch==2.2.2
+transformers==4.39.2

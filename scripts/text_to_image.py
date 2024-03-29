@@ -15,10 +15,10 @@ from pathlib import Path
 import torch
 
 from labml import lab, monit
-from labml_nn.diffusion.stable_diffusion.latent_diffusion import LatentDiffusion
-from labml_nn.diffusion.stable_diffusion.sampler.ddim import DDIMSampler
-from labml_nn.diffusion.stable_diffusion.sampler.ddpm import DDPMSampler
-from labml_nn.diffusion.stable_diffusion.util import load_model, save_images, set_seed
+from latent_diffusion import LatentDiffusion
+from sampler.ddim import DDIMSampler
+from sampler.ddpm import DDPMSampler
+from util import load_model, save_images, set_seed
 
 
 class Txt2Img:
@@ -138,7 +138,7 @@ def main():
     set_seed(42)
 
     # Set flash attention
-    from labml_nn.diffusion.stable_diffusion.model.unet_attention import CrossAttention
+    from model.unet_attention import CrossAttention
     CrossAttention.use_flash_attention = opt.flash
 
     #

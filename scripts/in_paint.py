@@ -15,10 +15,10 @@ from typing import Optional
 import torch
 
 from labml import lab, monit
-from labml_nn.diffusion.stable_diffusion.latent_diffusion import LatentDiffusion
-from labml_nn.diffusion.stable_diffusion.sampler import DiffusionSampler
-from labml_nn.diffusion.stable_diffusion.sampler.ddim import DDIMSampler
-from labml_nn.diffusion.stable_diffusion.util import load_model, save_images, load_img, set_seed
+from latent_diffusion import LatentDiffusion
+from sampler import DiffusionSampler
+from sampler.ddim import DDIMSampler
+from util import load_model, save_images, load_img, set_seed
 
 
 class InPaint:

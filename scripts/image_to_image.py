@@ -14,8 +14,8 @@ from pathlib import Path
 import torch
 
 from labml import lab, monit
-from labml_nn.diffusion.stable_diffusion.sampler.ddim import DDIMSampler
-from labml_nn.diffusion.stable_diffusion.util import load_model, load_img, save_images, set_seed
+from sampler.ddim import DDIMSampler
+from util import load_model, load_img, save_images, set_seed
 
 
 class Img2Img:
