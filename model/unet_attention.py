@@ -1,19 +1,15 @@
 """
 ---
-title: Transformer for Stable Diffusion U-Net
+title: 用于稳定扩散 U-Net 的 Transformer
 summary: >
- Annotated PyTorch implementation/tutorial of the transformer
- for U-Net in stable diffusion.
+ 用于稳定扩散中 U-Net 的 Transformer 的带注释的 PyTorch 实现/教程
 ---
 
-# Transformer for Stable Diffusion [U-Net](unet.html)
+# 用于稳定扩散 U-Net 的 Transformer
 
-This implements the transformer module used in [U-Net](unet.html) that
- gives $\epsilon_\text{cond}(x_t, c)$
+这实现了在[U-Net](unet.html)中使用的 Transformer 模块，它给出了$\epsilon_\text{cond}(x_t, c)$
 
-We have kept to the model definition and naming unchanged from
-[CompVis/stable-diffusion](https://github.com/CompVis/stable-diffusion)
-so that we can load the checkpoints directly.
+我们保持了与[CompVis/stable-diffusion](https://github.com/CompVis/stable-diffusion)相同的模型定义和命名，以便可以直接加载检查点。
 """
 
 from typing import Optional
@@ -25,113 +21,113 @@ from torch import nn
 
 class SpatialTransformer(nn.Module):
     """
-    ## Spatial Transformer
+    ## 空间 Transformer
     """
 
     def __init__(self, channels: int, n_heads: int, n_layers: int, d_cond: int):
         """
-        :param channels: is the number of channels in the feature map
-        :param n_heads: is the number of attention heads
-        :param n_layers: is the number of transformer layers
-        :param d_cond: is the size of the conditional embedding
+        :param channels: 是特征图中的通道数
+        :param n_heads: 是注意力头的数量
+        :param n_layers: 是 Transformer 层的数量
+        :param d_cond: 是条件嵌入的大小
         """
+        # 继承 nn.Module
         super().__init__()
-        # Initial group normalization
+        # 初始组归一化
         self.norm = torch.nn.GroupNorm(num_groups=32, num_channels=channels, eps=1e-6, affine=True)
-        # Initial $1 \times 1$ convolution
+        # 初始$1 \times 1$卷积
         self.proj_in = nn.Conv2d(channels, channels, kernel_size=1, stride=1, padding=0)
 
-        # Transformer layers
+        # Transformer 层
         self.transformer_blocks = nn.ModuleList(
             [BasicTransformerBlock(channels, n_heads, channels // n_heads, d_cond=d_cond) for _ in range(n_layers)]
         )
 
-        # Final $1 \times 1$ convolution
+        # 最终$1 \times 1$卷积
         self.proj_out = nn.Conv2d(channels, channels, kernel_size=1, stride=1, padding=0)
 
     def forward(self, x: torch.Tensor, cond: torch.Tensor):
         """
-        :param x: is the feature map of shape `[batch_size, channels, height, width]`
-        :param cond: is the conditional embeddings of shape `[batch_size,  n_cond, d_cond]`
+        :param x: 是形状为[batch_size, channels, height, width]的特征图
+        :param cond: 是形状为[batch_size,  n_cond, d_cond]的条件嵌入
         """
-        # Get shape `[batch_size, channels, height, width]`
+        # 获取形状[batch_size, channels, height, width]
         b, c, h, w = x.shape
-        # For residual connection
+        # 用于残差连接
         x_in = x
-        # Normalize
+        # 归一化
         x = self.norm(x)
-        # Initial $1 \times 1$ convolution
+        # 初始$1 \times 1$卷积
         x = self.proj_in(x)
-        # Transpose and reshape from `[batch_size, channels, height, width]`
-        # to `[batch_size, height * width, channels]`
+        # 从[batch_size, channels, height, width]
+        # 转置并重塑为[batch_size, height * width, channels]
         x = x.permute(0, 2, 3, 1).view(b, h * w, c)
-        # Apply the transformer layers
+        # 应用 Transformer 层
         for block in self.transformer_blocks:
             x = block(x, cond)
-        # Reshape and transpose from `[batch_size, height * width, channels]`
-        # to `[batch_size, channels, height, width]`
+        # 从[batch_size, height * width, channels]
+        # 重塑并转置为[batch_size, channels, height, width]
         x = x.view(b, h, w, c).permute(0, 3, 1, 2)
-        # Final $1 \times 1$ convolution
+        # 最终$1 \times 1$卷积
         x = self.proj_out(x)
-        # Add residual
+        # 添加残差
         return x + x_in
 
 
 class BasicTransformerBlock(nn.Module):
     """
-    ### Transformer Layer
+    ### Transformer 层
     """
 
     def __init__(self, d_model: int, n_heads: int, d_head: int, d_cond: int):
         """
-        :param d_model: is the input embedding size
-        :param n_heads: is the number of attention heads
-        :param d_head: is the size of a attention head
-        :param d_cond: is the size of the conditional embeddings
+        :param d_model: 是输入嵌入的大小
+        :param n_heads: 是注意力头的数量
+        :param d_head: 是注意力头的大小
+        :param d_cond: 是条件嵌入的大小
         """
+        # 继承 nn.Module
         super().__init__()
-        # Self-attention layer and pre-norm layer
+        # 自注意力层和前置归一化层
         self.attn1 = CrossAttention(d_model, d_model, n_heads, d_head)
         self.norm1 = nn.LayerNorm(d_model)
-        # Cross attention layer and pre-norm layer
+        # 交叉注意力层和前置归一化层
         self.attn2 = CrossAttention(d_model, d_cond, n_heads, d_head)
         self.norm2 = nn.LayerNorm(d_model)
-        # Feed-forward network and pre-norm layer
+        # 前馈网络和前置归一化层
         self.ff = FeedForward(d_model)
         self.norm3 = nn.LayerNorm(d_model)
 
     def forward(self, x: torch.Tensor, cond: torch.Tensor):
         """
-        :param x: are the input embeddings of shape `[batch_size, height * width, d_model]`
-        :param cond: is the conditional embeddings of shape `[batch_size,  n_cond, d_cond]`
+        :param x: 是形状为[batch_size, height * width, d_model]的输入嵌入
+        :param cond: 是形状为[batch_size,  n_cond, d_cond]的条件嵌入
         """
-        # Self attention
+        # 自注意力
         x = self.attn1(self.norm1(x)) + x
-        # Cross-attention with conditioning
+        # 与条件的交叉注意力
         x = self.attn2(self.norm2(x), cond=cond) + x
-        # Feed-forward network
+        # 前馈网络
         x = self.ff(self.norm3(x)) + x
         #
         return x
 
-
 class CrossAttention(nn.Module):
     """
-    ### Cross Attention Layer
+    ### 交叉注意力层
 
-    This falls-back to self-attention when conditional embeddings are not specified.
+    当没有指定条件嵌入时，会退回到自注意力
     """
 
     use_flash_attention: bool = False
 
     def __init__(self, d_model: int, d_cond: int, n_heads: int, d_head: int, is_inplace: bool = True):
         """
-        :param d_model: is the input embedding size
-        :param n_heads: is the number of attention heads
-        :param d_head: is the size of a attention head
-        :param d_cond: is the size of the conditional embeddings
-        :param is_inplace: specifies whether to perform the attention softmax computation inplace to
-            save memory
+        :param d_model: 是输入嵌入的大小
+        :param n_heads: 是注意力头的数量
+        :param d_head: 是一个注意力头的大小
+        :param d_cond: 是条件嵌入的大小
+        :param is_inplace: 指定是否在原地执行注意力 softmax 计算以节省内存
         """
         super().__init__()
 
@@ -139,76 +135,74 @@ class CrossAttention(nn.Module):
         self.n_heads = n_heads
         self.d_head = d_head
 
-        # Attention scaling factor
+        # 注意力缩放因子
         self.scale = d_head ** -0.5
 
-        # Query, key and value mappings
+        # 查询、键和值的映射
         d_attn = d_head * n_heads
         self.to_q = nn.Linear(d_model, d_attn, bias=False)
         self.to_k = nn.Linear(d_cond, d_attn, bias=False)
         self.to_v = nn.Linear(d_cond, d_attn, bias=False)
 
-        # Final linear layer
+        # 最终线性层
         self.to_out = nn.Sequential(nn.Linear(d_attn, d_model))
 
-        # Setup [flash attention](https://github.com/HazyResearch/flash-attention).
-        # Flash attention is only used if it's installed
-        # and `CrossAttention.use_flash_attention` is set to `True`.
+        # 设置 [flash attention](https://github.com/HazyResearch/flash-attention)。
+        # Flash attention 仅在安装并`CrossAttention.use_flash_attention`设置为`True`时使用
         try:
-            # You can install flash attention by cloning their Github repo,
+            # 您可以通过克隆他们的 Github 仓库，
             # [https://github.com/HazyResearch/flash-attention](https://github.com/HazyResearch/flash-attention)
-            # and then running `python setup.py install`
+            # 然后运行`python setup.py install`来安装 flash attention
             from flash_attn.flash_attention import FlashAttention
             self.flash = FlashAttention()
-            # Set the scale for scaled dot-product attention.
+            # 设置用于缩放点积注意力的缩放因子
             self.flash.softmax_scale = self.scale
-        # Set to `None` if it's not installed
+        # 如果未安装，则设置为`None`
         except ImportError:
             self.flash = None
 
     def forward(self, x: torch.Tensor, cond: Optional[torch.Tensor] = None):
         """
-        :param x: are the input embeddings of shape `[batch_size, height * width, d_model]`
-        :param cond: is the conditional embeddings of shape `[batch_size, n_cond, d_cond]`
+        :param x: 是形状为`[batch_size, height * width, d_model]`的输入嵌入
+        :param cond: 是形状为`[batch_size, n_cond, d_cond]`的条件嵌入
         """
 
-        # If `cond` is `None` we perform self attention
+        # 如果`cond`为`None`，我们执行自注意力
         has_cond = cond is not None
         if not has_cond:
             cond = x
 
-        # Get query, key and value vectors
+        # 获取查询、键和值向量
         q = self.to_q(x)
         k = self.to_k(cond)
         v = self.to_v(cond)
 
-        # Use flash attention if it's available and the head size is less than or equal to `128`
+        # 如果可用并且头大小小于或等于`128`，则使用 flash 注意力
         if CrossAttention.use_flash_attention and self.flash is not None and not has_cond and self.d_head <= 128:
             return self.flash_attention(q, k, v)
-        # Otherwise, fallback to normal attention
+        # 否则，回退到正常注意力
         else:
             return self.normal_attention(q, k, v)
 
     def flash_attention(self, q: torch.Tensor, k: torch.Tensor, v: torch.Tensor):
         """
-        #### Flash Attention
+        #### Flash 注意力
 
-        :param q: are the query vectors before splitting heads, of shape `[batch_size, seq, d_attn]`
-        :param k: are the query vectors before splitting heads, of shape `[batch_size, seq, d_attn]`
-        :param v: are the query vectors before splitting heads, of shape `[batch_size, seq, d_attn]`
+        :param q: 是在拆分头之前的查询向量，形状为`[batch_size, seq, d_attn]`
+        :param k: 是在拆分头之前的键向量，形状为`[batch_size, seq, d_attn]`
+        :param v: 是在拆分头之前的值向量，形状为`[batch_size, seq, d_attn]`
         """
 
-        # Get batch size and number of elements along sequence axis (`width * height`)
+        # 获取批大小和序列轴上的元素数量（`width * height`）
         batch_size, seq_len, _ = q.shape
 
-        # Stack `q`, `k`, `v` vectors for flash attention, to get a single tensor of
-        # shape `[batch_size, seq_len, 3, n_heads * d_head]`
+        # 将`q`、`k`、`v`向量堆叠起来，以得到一个单一的张量
+        # 形状为`[batch_size, seq_len, 3, n_heads * d_head]`
         qkv = torch.stack((q, k, v), dim=2)
-        # Split the heads
+        # 拆分头
         qkv = qkv.view(batch_size, seq_len, 3, self.n_heads, self.d_head)
 
-        # Flash attention works for head sizes `32`, `64` and `128`, so we have to pad the heads to
-        # fit this size.
+        # Flash 注意力适用于头大小`32`、`64`和`128`，因此我们必须填充头以适应此大小
         if self.d_head <= 32:
             pad = 32 - self.d_head
         elif self.d_head <= 64:
@@ -216,42 +210,42 @@ class CrossAttention(nn.Module):
         elif self.d_head <= 128:
             pad = 128 - self.d_head
         else:
-            raise ValueError(f'Head size ${self.d_head} too large for Flash Attention')
+            raise ValueError(f'头大小{self.d_head}对于 Flash 注意力太大')
 
-        # Pad the heads
+        # 填充头
         if pad:
             qkv = torch.cat((qkv, qkv.new_zeros(batch_size, seq_len, 3, self.n_heads, pad)), dim=-1)
 
-        # Compute attention
+        # 计算注意力
         # $$\underset{seq}{softmax}\Bigg(\frac{Q K^\top}{\sqrt{d_{key}}}\Bigg)V$$
-        # This gives a tensor of shape `[batch_size, seq_len, n_heads, d_padded]`
+        # 这给出了一个形状为`[batch_size, seq_len, n_heads, d_padded]`的张量
         out, _ = self.flash(qkv)
-        # Truncate the extra head size
+        # 截断额外的头大小
         out = out[:, :, :, :self.d_head]
-        # Reshape to `[batch_size, seq_len, n_heads * d_head]`
+        # 重塑为`[batch_size, seq_len, n_heads * d_head]`
         out = out.reshape(batch_size, seq_len, self.n_heads * self.d_head)
 
-        # Map to `[batch_size, height * width, d_model]` with a linear layer
+        # 用线性层映射到`[batch_size, height * width, d_model]` 
         return self.to_out(out)
 
     def normal_attention(self, q: torch.Tensor, k: torch.Tensor, v: torch.Tensor):
         """
-        #### Normal Attention
-        
-        :param q: are the query vectors before splitting heads, of shape `[batch_size, seq, d_attn]`
-        :param k: are the query vectors before splitting heads, of shape `[batch_size, seq, d_attn]`
-        :param v: are the query vectors before splitting heads, of shape `[batch_size, seq, d_attn]`
+        #### 正常注意力
+
+        :param q: 是在拆分头之前的查询向量，形状为`[batch_size, seq, d_attn]`
+        :param k: 是在拆分头之前的键向量，形状为`[batch_size, seq, d_attn]`
+        :param v: 是在拆分头之前的值向量，形状为`[batch_size, seq, d_attn]`
         """
 
-        # Split them to heads of shape `[batch_size, seq_len, n_heads, d_head]`
+        # 将它们拆分为头的形状`[batch_size, seq_len, n_heads, d_head]`
         q = q.view(*q.shape[:2], self.n_heads, -1)
         k = k.view(*k.shape[:2], self.n_heads, -1)
         v = v.view(*v.shape[:2], self.n_heads, -1)
 
-        # Calculate attention $\frac{Q K^\top}{\sqrt{d_{key}}}$
+        # 计算注意力$\frac{Q K^\top}{\sqrt{d_{key}}}$
         attn = torch.einsum('bihd,bjhd->bhij', q, k) * self.scale
 
-        # Compute softmax
+        # 计算 softmax
         # $$\underset{seq}{softmax}\Bigg(\frac{Q K^\top}{\sqrt{d_{key}}}\Bigg)$$
         if self.is_inplace:
             half = attn.shape[0] // 2
@@ -260,50 +254,49 @@ class CrossAttention(nn.Module):
         else:
             attn = attn.softmax(dim=-1)
 
-        # Compute attention output
+        # 计算注意力输出
         # $$\underset{seq}{softmax}\Bigg(\frac{Q K^\top}{\sqrt{d_{key}}}\Bigg)V$$
         out = torch.einsum('bhij,bjhd->bihd', attn, v)
-        # Reshape to `[batch_size, height * width, n_heads * d_head]`
+        # 重塑为`[batch_size, height * width, n_heads * d_head]`
         out = out.reshape(*out.shape[:2], -1)
-        # Map to `[batch_size, height * width, d_model]` with a linear layer
+        # 用线性层映射到`[batch_size, height * width, d_model]` 
         return self.to_out(out)
-
 
 class FeedForward(nn.Module):
     """
-    ### Feed-Forward Network
+    ### Feed-Forward Network（前馈网络）
     """
 
     def __init__(self, d_model: int, d_mult: int = 4):
         """
-        :param d_model: is the input embedding size
-        :param d_mult: is multiplicative factor for the hidden layer size
+        :param d_model: 输入嵌入的大小
+        :param d_mult: 隐藏层大小的乘法因子
         """
         super().__init__()
         self.net = nn.Sequential(
-            GeGLU(d_model, d_model * d_mult),
-            nn.Dropout(0.),
-            nn.Linear(d_model * d_mult, d_model)
+            GeGLU(d_model, d_model * d_mult),  # 构建 GeGLU 模块
+            nn.Dropout(0.),  # 应用 dropout 操作
+            nn.Linear(d_model * d_mult, d_model)  # 构建线性层
         )
 
     def forward(self, x: torch.Tensor):
-        return self.net(x)
+        return self.net(x)  # 前向传播
 
 
 class GeGLU(nn.Module):
     """
-    ### GeGLU Activation
+    ### GeGLU Activation（GeGLU 激活函数）
 
     $$\text{GeGLU}(x) = (xW + b) * \text{GELU}(xV + c)$$
     """
 
     def __init__(self, d_in: int, d_out: int):
         super().__init__()
-        # Combined linear projections $xW + b$ and $xV + c$
+        # 组合线性投影 $xW + b$ 和 $xV + c$
         self.proj = nn.Linear(d_in, d_out * 2)
 
     def forward(self, x: torch.Tensor):
-        # Get $xW + b$ and $xV + c$
+        # 获取 $xW + b$ 和 $xV + c$
         x, gate = self.proj(x).chunk(2, dim=-1)
         # $\text{GeGLU}(x) = (xW + b) * \text{GELU}(xV + c)$
         return x * F.gelu(gate)

@@ -1,24 +1,22 @@
 """
 ---
-title: Latent Diffusion Models
-summary: >
- Annotated PyTorch implementation/tutorial of latent diffusion models from paper
- High-Resolution Image Synthesis with Latent Diffusion Models
+标题：潜在扩散模型
+摘要：>
+  带注释的 PyTorch 实现/教程的潜在扩散模型来自论文
+  《使用潜在扩散模型的高分辨率图像合成》
 ---
 
-# Latent Diffusion Models
+# 潜在扩散模型
 
-Latent diffusion models use an auto-encoder to map between image space and
-latent space. The diffusion model works on the latent space, which makes it
-a lot easier to train.
-It is based on paper
-[High-Resolution Image Synthesis with Latent Diffusion Models](https://arxiv.org/abs/2112.10752).
+潜在扩散模型使用自动编码器在图像空间和潜在空间之间进行映射。扩散模型在潜在空间上工作，这使得训练变得容易得多。
+它基于论文
+[使用潜在扩散模型的高分辨率图像合成](https://arxiv.org/abs/2112.10752)。
 
-They use a pre-trained auto-encoder and train the diffusion U-Net on the latent
-space of the pre-trained auto-encoder.
+它们使用预训练的自动编码器，并在预训练的自动编码器的潜在空间上训练扩散 U 型网络。
 
-For a simpler diffusion implementation refer to our [DDPM implementation](../ddpm/index.html).
-We use same notations for $\alpha_t$, $\beta_t$ schedules, etc.
+对于更简单的扩散实现，请参考我们的[DDPM 实现](../ddpm/index.html)。
+我们对$\alpha_t$，$\beta_t$调度等使用相同的符号。
+
 """
 
 from typing import List
@@ -33,10 +31,10 @@ from model.unet import UNetModel
 
 class DiffusionWrapper(nn.Module):
     """
-    *This is an empty wrapper class around the [U-Net](model/unet.html).
-    We keep this to have the same model structure as
-    [CompVis/stable-diffusion](https://github.com/CompVis/stable-diffusion)
-    so that we do not have to map the checkpoint weights explicitly*.
+    *这是[U 型网络](model/unet.html)的空包装类。
+    我们保留这个，以使其具有与
+    [CompVis/stable-diffusion](https://github.com/CompVis/stable-diffusion)相同的模型结构
+    ，这样我们就不必明确映射检查点权重*。
     """
 
     def __init__(self, diffusion_model: UNetModel):
@@ -49,13 +47,13 @@ class DiffusionWrapper(nn.Module):
 
 class LatentDiffusion(nn.Module):
     """
-    ## Latent diffusion model
+    ## 潜在扩散模型
 
-    This contains following components:
+    这包含以下组件：
 
-    * [AutoEncoder](model/autoencoder.html)
-    * [U-Net](model/unet.html) with [attention](model/unet_attention.html)
-    * [CLIP embeddings generator](model/clip_embedder.html)
+    * [自动编码器](model/autoencoder.html)
+    * 带有[注意力](model/unet_attention.html)的[U 型网络](model/unet.html)
+    * [CLIP 嵌入生成器](model/clip_embedder.html)
     """
     model: DiffusionWrapper
     first_stage_model: Autoencoder
@@ -71,30 +69,29 @@ class LatentDiffusion(nn.Module):
                  linear_end: float,
                  ):
         """
-        :param unet_model: is the [U-Net](model/unet.html) that predicts noise
-         $\epsilon_\text{cond}(x_t, c)$, in latent space
-        :param autoencoder: is the [AutoEncoder](model/autoencoder.html)
-        :param clip_embedder: is the [CLIP embeddings generator](model/clip_embedder.html)
-        :param latent_scaling_factor: is the scaling factor for the latent space. The encodings of
-         the autoencoder are scaled by this before feeding into the U-Net.
-        :param n_steps: is the number of diffusion steps $T$.
-        :param linear_start: is the start of the $\beta$ schedule.
-        :param linear_end: is the end of the $\beta$ schedule.
+        :param unet_model: 是预测噪声$\epsilon_\text{cond}(x_t, c)$的[U 型网络](model/unet.html)，在潜在空间中
+         $x_t$。
+        :param autoencoder: 是[自动编码器](model/autoencoder.html)
+        :param clip_embedder: 是[CLIP 嵌入生成器](model/clip_embedder.html)
+        :param latent_scaling_factor: 是潜在空间的缩放因子。自动编码器的编码通过此进行缩放，然后再输入到 U 型网络中。
+        :param n_steps: 是扩散步骤$T$的数量。
+        :param linear_start: 是$\beta$调度的开始。
+        :param linear_end: 是$\beta$调度的结束。
         """
         super().__init__()
-        # Wrap the [U-Net](model/unet.html) to keep the same model structure as
-        # [CompVis/stable-diffusion](https://github.com/CompVis/stable-diffusion).
+        # 将[U 型网络](model/unet.html)包装起来，以保持与
+        # [CompVis/stable-diffusion](https://github.com/CompVis/stable-diffusion)相同的模型结构。
         self.model = DiffusionWrapper(unet_model)
-        # Auto-encoder and scaling factor
+        # 自动编码器和缩放因子
         self.first_stage_model = autoencoder
         self.latent_scaling_factor = latent_scaling_factor
-        # [CLIP embeddings generator](model/clip_embedder.html)
+        # [CLIP 嵌入生成器](model/clip_embedder.html)
         self.cond_stage_model = clip_embedder
 
-        # Number of steps $T$
+        # 步骤数$T$
         self.n_steps = n_steps
 
-        # $\beta$ schedule
+        # $\beta$调度
         beta = torch.linspace(linear_start ** 0.5, linear_end ** 0.5, n_steps, dtype=torch.float64) ** 2
         self.beta = nn.Parameter(beta.to(torch.float32), requires_grad=False)
         # $\alpha_t = 1 - \beta_t$
@@ -106,40 +103,39 @@ class LatentDiffusion(nn.Module):
     @property
     def device(self):
         """
-        ### Get model device
+        ### 获取模型设备
         """
         return next(iter(self.model.parameters())).device
 
     def get_text_conditioning(self, prompts: List[str]):
         """
-        ### Get [CLIP embeddings](model/clip_embedder.html) for a list of text prompts
+        ### 获取文本提示列表的[CLIP 嵌入](model/clip_embedder.html)
         """
         return self.cond_stage_model(prompts)
 
     def autoencoder_encode(self, image: torch.Tensor):
         """
-        ### Get scaled latent space representation of the image
+        ### 获取图像的缩放潜在空间表示
 
-        The encoder output is a distribution.
-        We sample from that and multiply by the scaling factor.
+        编码器输出是一个分布。
+        我们从该分布中进行采样，并乘以缩放因子。
         """
         return self.latent_scaling_factor * self.first_stage_model.encode(image).sample()
 
     def autoencoder_decode(self, z: torch.Tensor):
         """
-        ### Get image from the latent representation
+        ### 从潜在表示中获取图像
 
-        We scale down by the scaling factor and then decode.
+        我们按缩放因子缩放下来，然后进行解码。
         """
         return self.first_stage_model.decode(z / self.latent_scaling_factor)
 
     def forward(self, x: torch.Tensor, t: torch.Tensor, context: torch.Tensor):
         """
-        ### Predict noise
+        ### 预测噪声
 
-        Predict noise given the latent representation $x_t$, time step $t$, and the
-        conditioning context $c$.
+        根据潜在表示$x_t$，时间步$t$和条件上下文$c$预测噪声。
 
-        $$\epsilon_\text{cond}(x_t, c)$$
+        $\epsilon_\text{cond}(x_t, c)$
         """
         return self.model(x, t, context)
